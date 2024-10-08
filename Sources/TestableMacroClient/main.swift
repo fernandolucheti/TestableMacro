@@ -1,6 +1,7 @@
 import TestableMacro
 
-@Testable struct MyClass {
+@Testable
+class MyClass {
     private var someVariable: Int = 0
 
     private func someFunction() {
