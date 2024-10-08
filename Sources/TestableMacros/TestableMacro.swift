@@ -3,7 +3,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-public struct TestableMacroImpl: ExtensionMacro {
+public struct TestableMacro: ExtensionMacro {
     public static func expansion(of node: SwiftSyntax.AttributeSyntax,
                                  attachedTo declaration: some SwiftSyntax.DeclGroupSyntax,
                                  providingExtensionsOf type: some SwiftSyntax.TypeSyntaxProtocol,
@@ -86,6 +86,6 @@ public struct TestableMacroImpl: ExtensionMacro {
 @main
 struct TestableMacroPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
-        TestableMacroImpl.self
+        TestableMacro.self
     ]
 }
