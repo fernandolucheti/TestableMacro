@@ -4,6 +4,7 @@ import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
 public struct TestableMacro: ExtensionMacro {
+    
     public static func expansion(of node: SwiftSyntax.AttributeSyntax,
                                  attachedTo declaration: some SwiftSyntax.DeclGroupSyntax,
                                  providingExtensionsOf type: some SwiftSyntax.TypeSyntaxProtocol,
@@ -23,53 +24,70 @@ public struct TestableMacro: ExtensionMacro {
                 testableProperties.append(varDecl)
             }
         }
-        return [
-        try ExtensionDeclSyntax("""
-        extension \(type.trimmed)
-        """, membersBuilder: {
+        var properties = ""
+        var functions = ""
+        
+        properties = testableProperties.map { varDecl in
+            let propertyName = varDecl.bindings.first?.pattern.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let propertyType = varDecl.bindings.first?.typeAnnotation?.type.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Any"
+            
+            var hasSetter = false
+            var propertyAccess = "get { return target.\(propertyName) }"
+            switch varDecl.bindings.first?.accessorBlock?.accessors {
+            case .accessors(let accessors):
+                hasSetter = accessors.contains(where: { $0.accessorSpecifier.text.contains("set") })
+            case .getter:
+                break
+            case .none:
+                hasSetter = true
+            }
+            if hasSetter {
+                propertyAccess.append("set { target.\(propertyName) = newValue }")
+            }
+            return "var \(propertyName): \(propertyType) {\(propertyAccess)}"
+        }.joined(separator: "\n")
+        
+        functions = testableFunctions.map { funcDecl in
+            let funcName = funcDecl.name.text
+            
+            let parameters = funcDecl.signature.parameterClause.parameters.map { param in
+                var suffix = ""
+                if let secondParamName = param.secondName?.text {
+                    suffix = " \(secondParamName)"
+                }
+                let paramName = param.firstName.text + suffix
+                let paramType = param.type.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                return "\(paramName): \(paramType)"
+            }.joined(separator: ", ")
+            
+            let paramNames = funcDecl.signature.parameterClause.parameters.map { param in
+                "\(param.firstName.text): \(param.secondName?.text ?? param.firstName.text)"
+            }.joined(separator: ", ")
+            
+            let returnType = funcDecl.signature.returnClause?.type.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Void"
+            
+            return "func \(funcName)(\(parameters)) -> \(returnType) { return target.\(funcName)(\(paramNames)) }"
+        }.joined(separator: "\n")
+        
+        return [try ExtensionDeclSyntax("extension \(type.trimmed)", membersBuilder: {
         """
         #if DEBUG
         var testHooks: TestHooks {
-        return TestHooks(target: self)
-        } struct TestHooks {
-        private var target: \(type.trimmed) fileprivate init(target: \(type.trimmed)) {
-        self.target = target
-        } \(raw: testableProperties.map { varDecl in
-        let propertyName = varDecl.bindings.first?.pattern.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let propertyType = varDecl.bindings.first?.typeAnnotation?.type.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Any"
-        return """
-        var \(propertyName): \(propertyType) {
-        get { return target.\(propertyName) }
-        set { target.\(propertyName) = newValue }
-        }
-        """
-        }.joined(separator: "\n")) \(raw: testableFunctions.map { funcDecl in
-        let funcName = funcDecl.name.text
-        let parameters = funcDecl.signature.parameterClause.parameters.map { param in
-        var suffix = ""
-        if let secondParamName = param.secondName?.text {
-        suffix = " \(secondParamName)"
-        }
-        let paramName = param.firstName.text + suffix
-        let paramType = param.type.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(paramName): \(paramType)"
-        }.joined(separator: ", ")
-        let paramNames = funcDecl.signature.parameterClause.parameters.map { param in
-        "\(param.firstName.text): \(param.secondName?.text ?? param.firstName.text)"
-        }.joined(separator: ", ")
-        let returnType = funcDecl.signature.output?.returnType.description.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Void"
-        return """
-        func \(funcName)(\(parameters)) -> \(returnType) {
-        return target.\(funcName)(\(paramNames))
-        }
-        """
-        }.joined(separator: "\n"))
+            return TestHooks(target: self)
+        } 
+        struct TestHooks {
+            private var target: \(type.trimmed) 
+            fileprivate init(target: \(type.trimmed)) {
+                self.target = target
+            } 
+            \(raw: properties) 
+            \(raw: functions)
         }
         #endif
-        """})]
+        """
+        })]
     }
 }
-
 
 @main
 struct TestableMacroPlugin: CompilerPlugin {
