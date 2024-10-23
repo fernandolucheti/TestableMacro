@@ -3,6 +3,7 @@ import SwiftUI
 
 @Testable
 class MyClass {
+    private let someConstant: Int = 0
     private var someVariable: Int = 0
     private var someVariableGetOnly: Int { 0 }
     private var somePropertyGetOnlyImplicit: String {

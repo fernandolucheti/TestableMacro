@@ -5,7 +5,6 @@ import SwiftSyntaxMacrosTestSupport
 import XCTest
 import TestableMacros
 
-// Macro implementations build for the host, so the corresponding module is not available when cross-compiling. Cross-compiled tests may still make use of the macro itself in end-to-end tests.
 let testMacros: [String: Macro.Type] = [
     "Testable": TestableMacro.self,
 ]
@@ -14,6 +13,7 @@ final class MacroTests: XCTestCase {
     func testTestableMacro() throws {
         let source = """
 class MyClass {
+    private let someConstant: Int = 0
     private var someVariable: Int = 0
     private var someVariableGetOnly: Int { 0 }
     private var somePropertyGetOnlyImplicit: String {
@@ -52,6 +52,11 @@ extension MyClass {
         fileprivate init(target: MyClass) {
             self.target = target
         }
+        var someConstant: Int {
+            get {
+                return target.someConstant
+            }
+        }
         var someVariable: Int {
             get {
                 return target.someVariable
@@ -83,7 +88,7 @@ extension MyClass {
                 target.somePropertyGetAndSetExplicit = newValue
             }
         }
-        func someFunction2() -> Void {
+        func someFunction2() {
             return target.someFunction2()
         }
         func someFunction(param1: String, param2: Int) -> (() -> Void)? {
