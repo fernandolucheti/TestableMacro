@@ -13,4 +13,5 @@ struct Keywords {
     static var `func`: String { "func" }
     static var `return`: String { "return" }
     static var `private`: String { "private" }
+    static var `static`: String { "static" }
 }

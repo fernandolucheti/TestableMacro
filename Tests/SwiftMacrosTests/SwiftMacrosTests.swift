@@ -9,7 +9,7 @@ let testMacros: [String: Macro.Type] = [
     "Testable": TestableMacro.self,
 ]
 final class MacroTests: XCTestCase {
-    
+
     func testTestableMacro() throws {
         let source = """
 class MyClass {
@@ -26,6 +26,12 @@ class MyClass {
         get { "" }
         set { }
     }
+    private static var staticVariable: Int = 42
+    private static let staticConstant: String = "test"
+    private static var staticComputedProperty: Double {
+        get { 3.14 }
+        set { }
+    }
     private func someFunction2() {
     }
     private func someFunction(param1: String, param2: Int) -> (() -> Void)? {
@@ -37,9 +43,15 @@ class MyClass {
     fileprivate func anotherFunction(in param: Double) -> Double? {
         nil
     }
+    private static func staticFunction() -> String {
+        "static result"
+    }
+    private static func staticFunctionWithParams(_ value: Int, name: String) -> Bool {
+        value > 0
+    }
 }
 """
-        
+
         let expectedOutput = """
 
 extension MyClass {
@@ -99,6 +111,33 @@ extension MyClass {
         }
         func anotherFunction(in param: Double) -> Double? {
             return target.anotherFunction(in: param)
+        }
+        static var staticVariable: Int {
+            get {
+                return MyClass.staticVariable
+            }
+            set {
+                MyClass.staticVariable = newValue
+            }
+        }
+        static var staticConstant: String {
+            get {
+                return MyClass.staticConstant
+            }
+        }
+        static var staticComputedProperty: Double {
+            get {
+                return MyClass.staticComputedProperty
+            }
+            set {
+                MyClass.staticComputedProperty = newValue
+            }
+        }
+        static func staticFunction() -> String {
+            return MyClass.staticFunction()
+        }
+        static func staticFunctionWithParams(_ value: Int, name: String) -> Bool {
+            return MyClass.staticFunctionWithParams(_: value, name: name)
         }
     }
     #endif

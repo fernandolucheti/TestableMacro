@@ -4,17 +4,19 @@ import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
 public struct TestableMacro: ExtensionMacro {
-    
+
     public static func expansion(of node: SwiftSyntax.AttributeSyntax,
                                  attachedTo declaration: some SwiftSyntax.DeclGroupSyntax,
                                  providingExtensionsOf type: some SwiftSyntax.TypeSyntaxProtocol,
                                  conformingTo protocols: [SwiftSyntax.TypeSyntax],
                                  in context: some SwiftSyntaxMacros.MacroExpansionContext) throws -> [SwiftSyntax.ExtensionDeclSyntax] {
-        
+
         let privateMembers: TypeMembers = extractPrivateMembers(declaration.memberBlock.members)
-        let properties = stringify(privateMembers.properties)
-        let functions = stringify(privateMembers.functions)
-        
+        let instanceProperties = stringify(privateMembers.instanceProperties, isStatic: false, typeName: type.trimmed.description)
+        let instanceFunctions = stringify(privateMembers.instanceFunctions, isStatic: false, typeName: type.trimmed.description)
+        let staticProperties = stringify(privateMembers.staticProperties, isStatic: true, typeName: type.trimmed.description)
+        let staticFunctions = stringify(privateMembers.staticFunctions, isStatic: true, typeName: type.trimmed.description)
+
         return [try ExtensionDeclSyntax("extension \(type.trimmed)",
                                         membersBuilder: {
         """
@@ -27,8 +29,10 @@ public struct TestableMacro: ExtensionMacro {
             fileprivate init(target: \(type.trimmed)) {
                 self.target = target
             } 
-            \(raw: properties) 
-            \(raw: functions)
+            \(raw: instanceProperties) 
+            \(raw: instanceFunctions)
+            \(raw: staticProperties)
+            \(raw: staticFunctions)
         }
         #endif
         """
@@ -37,46 +41,59 @@ public struct TestableMacro: ExtensionMacro {
 }
 
 extension TestableMacro {
-    
+
     private struct TypeMembers {
-        var properties: [VariableDeclSyntax]
-        var functions: [FunctionDeclSyntax]
+        var instanceProperties: [VariableDeclSyntax]
+        var instanceFunctions: [FunctionDeclSyntax]
+        var staticProperties: [VariableDeclSyntax]
+        var staticFunctions: [FunctionDeclSyntax]
     }
-    
+
     private static func extractPrivateMembers(_ members: MemberBlockItemListSyntax) -> TypeMembers {
-        var typeMembers = TypeMembers(properties: [], functions: [])
+        var typeMembers = TypeMembers(instanceProperties: [], instanceFunctions: [], staticProperties: [], staticFunctions: [])
         members.forEach { member in
             if let varDecl = member.decl.as(VariableDeclSyntax.self),
                varDecl.modifiers.contains(where: { $0.name.text.contains(Keywords.private) }) {
-                typeMembers.properties.append(varDecl)
+                if varDecl.modifiers.contains(where: { $0.name.text.contains(Keywords.static) }) {
+                    typeMembers.staticProperties.append(varDecl)
+                } else {
+                    typeMembers.instanceProperties.append(varDecl)
+                }
             }
             if let funcDecl = member.decl.as(FunctionDeclSyntax.self),
                funcDecl.modifiers.contains(where: { $0.name.text.contains(Keywords.private) }) {
-                typeMembers.functions.append(funcDecl)
+                if funcDecl.modifiers.contains(where: { $0.name.text.contains(Keywords.static) }) {
+                    typeMembers.staticFunctions.append(funcDecl)
+                } else {
+                    typeMembers.instanceFunctions.append(funcDecl)
+                }
             }
         }
         return typeMembers
     }
-    
-    private static func stringify(_ properties: [VariableDeclSyntax]) -> String {
+
+    private static func stringify(_ properties: [VariableDeclSyntax], isStatic: Bool, typeName: String) -> String {
         properties.map { varDecl in
             let propertyName = varDecl.bindings.first?.pattern.description
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? .empty
             let propertyType = varDecl.bindings.first?.typeAnnotation?.type.description
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Any"
-            
-            var accessors = "\(Keywords.get) { \(Keywords.return) target.\(propertyName) }"
+
+            let targetAccess = isStatic ? typeName : "target"
+            let staticModifier = isStatic ? "\(Keywords.static) " : ""
+
+            var accessors = "\(Keywords.get) { \(Keywords.return) \(targetAccess).\(propertyName) }"
             if varDecl.hasSetter {
-                accessors.append("\(Keywords.set) { target.\(propertyName) = newValue }")
+                accessors.append("\(Keywords.set) { \(targetAccess).\(propertyName) = newValue }")
             }
-            return "\(Keywords.var) \(propertyName): \(propertyType) {\(accessors)}"
+            return "\(staticModifier)\(Keywords.var) \(propertyName): \(propertyType) {\(accessors)}"
         }.joined(separator: "\n")
     }
-    
-    private static func stringify(_ functions: [FunctionDeclSyntax]) -> String {
+
+    private static func stringify(_ functions: [FunctionDeclSyntax], isStatic: Bool, typeName: String) -> String {
         functions.map { funcDecl in
             let funcName = funcDecl.name.text
-            
+
             let parameters = funcDecl.signature.parameterClause.parameters.map { param in
                 var parameterName = param.firstName.text
                 if let secondParamName = param.secondName?.text {
@@ -85,16 +102,19 @@ extension TestableMacro {
                 let paramType = param.type.description.trimmingCharacters(in: .whitespacesAndNewlines)
                 return "\(parameterName): \(paramType)"
             }.joined(separator: ", ")
-            
+
             let paramNames = funcDecl.signature.parameterClause.parameters.map { param in
                 "\(param.firstName.text): \(param.secondName?.text ?? param.firstName.text)"
             }.joined(separator: ", ")
-            
+
             let returnType = funcDecl.signature.returnClause?.type.description
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let returnSuffix = returnType.isEmpty ? .empty : " -> \(returnType)"
-            
-            return "\(Keywords.func) \(funcName)(\(parameters))\(returnSuffix) { \(Keywords.return) target.\(funcName)(\(paramNames)) }"
+
+            let targetAccess = isStatic ? typeName : "target"
+            let staticModifier = isStatic ? "\(Keywords.static) " : ""
+
+            return "\(staticModifier)\(Keywords.func) \(funcName)(\(parameters))\(returnSuffix) { \(Keywords.return) \(targetAccess).\(funcName)(\(paramNames)) }"
         }.joined(separator: "\n")
     }
 }
